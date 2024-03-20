@@ -21,7 +21,7 @@
         class="messagearea"
         id="chatmessages"
         readonly
-        name="chatroom"
+        name="chatmessages"
         rows="4"
         cols="50"
         placeholder="welcome to chatroom"
@@ -56,12 +56,13 @@
         document.getElementById("chatrom-selection").onsubmit = changeChatRoom
         document.getElementById("chatroom-message").onsubmit = sendMessage
 
-        if (window["Websocket"]) {
-            console.log("supperts websockets");
-            //connect to ws
-        } else {
-            // alert("broser doues not surpport web sockets")
-        }
+        if (window["WebSocket"]) {
+    new WebSocket("ws://" + document.location.host + "/ws");
+    // 웹 소켓 연결
+} else {
+    console.log("browser does not support web sockets");
+}
+
       };
     </script>
 

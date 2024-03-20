@@ -5,12 +5,17 @@ import (
 	"net/http"
 )
 
-func main() {
-	setupAPI()
+func setupAPI() {
+	manager := NewManager()
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// 정적 파일 제공을 위한 핸들러 등록
+	http.Handle("/", http.FileServer(http.Dir("./frontend")))
+
+	// 웹 소켓 연결 핸들러 등록
+	http.HandleFunc("/ws", manager.ServeWS)
 }
 
-func setupAPI() {
-	http.Handle("/", http.FileServer(http.Dir("./frontend")))
+func main() {
+	setupAPI()
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
