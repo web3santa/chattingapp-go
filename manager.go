@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -22,13 +25,16 @@ type Manager struct {
 	clients ClientList
 	sync.RWMutex
 
+	otps RetentionMap
+
 	handlers map[string]EventHandler
 }
 
-func NewManager() *Manager {
+func NewManager(ctx context.Context) *Manager {
 	m := &Manager{
 		clients:  make(ClientList),
 		handlers: make(map[string]EventHandler),
+		otps:     NewRetentionMap(ctx, 5*time.Second),
 	}
 	m.setupEventHandlers()
 	return m
@@ -57,6 +63,16 @@ func (m *Manager) routeEvent(event Event, c *Client) error {
 }
 
 func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request) {
+	otp := r.URL.Query().Get("otp")
+	if otp == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if !m.otps.VerifyOTP(otp) {
+		return
+	}
+
 	log.Println("new connection")
 
 	// upgrade regular http connection into websocket
@@ -73,6 +89,49 @@ func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request) {
 	go client.readMessages()
 	go client.writeMessages()
 
+}
+
+func (m *Manager) LoginHandler(w http.ResponseWriter, r *http.Request) {
+	type userLoginRequest struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	var req userLoginRequest
+
+	err := decodeJsonRequest(r, &req)
+	if err != nil {
+		http.Error(w, "Failed to decode JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Username == "percy" && req.Password == "123" {
+		type response struct {
+			OTP string `json:"otp"`
+		}
+
+		otp := m.otps.NewOTP()
+
+		resp := response{
+			OTP: otp.KEY,
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+		return
+	}
+
+	w.WriteHeader(http.StatusUnauthorized)
+}
+
+func decodeJsonRequest(r *http.Request, data interface{}) error {
+	return json.NewDecoder(r.Body).Decode(data)
 }
 
 func (m *Manager) addClient(client *Client) {
