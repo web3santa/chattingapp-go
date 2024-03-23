@@ -1,1 +1,4 @@
 chatapp
+server.crt
+server.key
+gencert.bash

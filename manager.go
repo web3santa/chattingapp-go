@@ -46,21 +46,66 @@ func (m *Manager) setupEventHandlers() {
 }
 
 func SendMessage(event Event, c *Client) error {
-	fmt.Println(event)
+	var chatevent SendMessageEvent
+
+	if err := json.Unmarshal(event.Payload, &chatevent); err != nil {
+		return fmt.Errorf("bas payload in request: %v", err)
+	}
+
+	var broadMessage NewMessageEvent
+
+	broadMessage.Sent = time.Now()
+	broadMessage.Message = chatevent.Message
+	broadMessage.From = chatevent.From
+
+	data, err := json.Marshal(broadMessage)
+	if err != nil {
+		return fmt.Errorf("failed to marchal broadcast message: %v", err)
+	}
+
+	println(data)
+
+	outgoingEvent := Event{
+		Payload: data,
+		// Type:    EventSendMessage,
+		Type: EventNewMessage,
+	}
+
+	for client := range c.manager.clients {
+		client.egress <- outgoingEvent
+	}
 	return nil
 }
 
 func (m *Manager) routeEvent(event Event, c *Client) error {
-	// check if the event type
-	if handler, ok := m.handlers[event.Type]; ok {
+	// 이벤트 유형에 해당하는 핸들러 찾기
+	handler, ok := m.handlers[event.Type]
+	if !ok {
+		// 처리되지 않은 이벤트 유형에 대한 에러 처리
+		return fmt.Errorf("no handler found for event type: %s", event.Type)
+	}
+
+	// 핸들러가 nil인지 확인하고 호출
+	if handler != nil {
 		if err := handler(event, c); err != nil {
 			return err
 		}
-		return nil
-	} else {
-		return nil
 	}
+
+	return nil
 }
+
+// func (m *Manager) routeEvent(event Event, c *Client) error {
+// 	// check if the event type
+// 	if handler, ok := m.handlers[event.Type]; ok {
+// 		if err := handler(event, c); err != nil {
+// 			return err
+// 		}
+// 		return nil
+// 	} else {
+// 		return nil
+// 	}
+// }
 
 func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request) {
 	otp := r.URL.Query().Get("otp")
@@ -138,7 +183,9 @@ func (m *Manager) addClient(client *Client) {
 	m.Lock()
 	defer m.Unlock()
 
-	if _, ok := m.clients[client]; ok {
+	// 클라이언트가 이미 목록에 있는지 확인
+	if _, ok := m.clients[client]; !ok {
+		// 목록에 없으면 클라이언트 추가
 		m.clients[client] = true
 	}
 }
@@ -147,17 +194,38 @@ func (m *Manager) removeClient(client *Client) {
 	m.Lock()
 	defer m.Unlock()
 
+	// 클라이언트를 목록에서 제거하고 연결 닫기
 	if _, ok := m.clients[client]; ok {
-		client.connection.Close()
+		// 클라이언트가 목록에 있는 경우에만 제거
 		delete(m.clients, client)
+		client.connection.Close()
 	}
 }
+
+// func (m *Manager) addClient(client *Client) {
+// 	m.Lock()
+// 	defer m.Unlock()
+
+// 	if _, ok := m.clients[client]; ok {
+// 		m.clients[client] = true
+// 	}
+// }
+
+// func (m *Manager) removeClient(client *Client) {
+// 	m.Lock()
+// 	defer m.Unlock()
+
+// 	if _, ok := m.clients[client]; ok {
+// 		client.connection.Close()
+// 		delete(m.clients, client)
+// 	}
+// }
 
 func checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 
 	switch origin {
-	case "http://localhost:8081":
+	case "https://localhost:3000":
 		return true
 	default:
 		return false
